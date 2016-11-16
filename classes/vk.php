@@ -10,7 +10,7 @@ https://github.com/z-aec/php-vk
 */
 class VKException extends Exception {}
 class VK{
-    //Актуальная версия VK.API
+
     private $api_version = "5.52";
 
     //Язык для возвращаемых результатов API (русский)
@@ -134,24 +134,43 @@ class VK{
         позволяющий одновременно уместить self::EXECUTE_REQUESTS_LIMIT запросов
         в один.
         */
+        $var = "var ";
+        $arr = "";
         $code = "return [";
+        if($token === "anonymous") return $this;
         $offset = $this->requests_buffer_pointer[$token];
         $count = $this->requests_buffer_counter[$token];
         if($offset == $count) return $this;
         for($i = $offset; $i < $count; $i++){
-            $code_add = "API."
+            $var_add = "v" . $i . ",";
+            $params = "{";
+            foreach ($this->requests_buffer[$token][$i]['params'] as $key => $value) {
+                if(!isset($value['type'])){
+                    $params .= $key . ":" . json_encode($value) . ",";
+                }else if($value['type'] === "var"){
+                    $params .= $key . ":" . $value['content'] . ",";
+                }
+            }
+            $params = substr($params, 0, -1) . "}";
+            $arr_add = "v" . $i . "=" . "API."
                 . $this->requests_buffer[$token][$i]['method']
                 . "("
-                . json_encode($this->requests_buffer[$token][$i]['params'])
-                . "),";
-            if(strlen($code . $code_add) <= self::EXECUTE_CODE_MAX_LEN - 2){
+                . $params
+                . ");";
+            $code_add = "v" . $i . ",";
+            if(strlen($var . $var_add . $arr. $arr_add . $code . $code_add) <= self::EXECUTE_CODE_MAX_LEN - 2){
+                $var .= $var_add;
+                $arr .= $arr_add;
                 $code .= $code_add;
             }else{
                 $count = $i;
                 break;
             }
         }
-        $code .= "];";
+        $code = substr($code, 0, -1) . "];";
+        $var = substr($var, 0, -1) . ";";
+        $code = $var. $arr . $code;
+
         $result = $this->apiQuery("execute", ["code" => $code], $token);
 
         if(isset($result['error']['error_code'])
@@ -314,6 +333,42 @@ class VK{
                 $result = 0;
                 $retry = true;
             }
+            if($result === "field"){
+                if(!is_array($response)){
+                    return function($keys) use ($response){
+                        $str = "v" . $response;
+                        foreach ($keys as $value) {
+                            if(is_integer($value)) 
+                                $str .= "[" . $value . "]";
+                            else if($value == "@")
+                                $str .= "@";
+                            else
+                                $str .= "." . $value;
+                        }
+                        return ["type" => "var", "content" => $str];
+                    };
+                }else{
+                    return function($keys) use ($response){
+                        $return = $response['response'];
+                        $prev_at = false;
+                        foreach ($keys as $value) {
+                            if($prev_at){
+                                $prev_at = false;
+                                foreach ($return as $key => $val) {
+                                    $return[$key] = $val[$value];
+                                }
+                                continue;
+                            }
+                            if($value !== "@"){
+                                $return = $return[$value];
+                            }else{
+                                $prev_at = true;
+                            }
+                        }
+                        return $return;
+                    };
+                }
+            }
             if(!is_array($response) || $retry){
                 if($retry){
                     $response = $self->pushRequestsBuffer($method, $params,
@@ -362,7 +417,7 @@ class VK{
                 $request_params[self::UPLOAD_METHODS[$method]['fields'][$ptr]]
                     = '@' . realpath($link);
                 $ptr++;
-
+                //var_dump(self::UPLOAD_METHODS[$method]['fields'][$ptr]);
                 if(!self::UPLOAD_METHODS[$method]['fields'][$ptr]
                     || !isset($url[$key + 1]))
                 {
@@ -371,7 +426,7 @@ class VK{
                     ), true);
 
                     $p = array_merge($params, $upload);
-        		    $result[] = $this->query(
+                    $result[] = $this->query(
                         self::UPLOAD_METHODS[$method]['save'],
                         $p, $token
                     );
