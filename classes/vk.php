@@ -362,7 +362,7 @@ class VK{
                 $request_params[self::UPLOAD_METHODS[$method]['fields'][$ptr]]
                     = '@' . realpath($link);
                 $ptr++;
-                //var_dump(self::UPLOAD_METHODS[$method]['fields'][$ptr]);
+
                 if(!self::UPLOAD_METHODS[$method]['fields'][$ptr]
                     || !isset($url[$key + 1]))
                 {
